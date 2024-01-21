@@ -3,6 +3,8 @@
 +/
 module arsd.webassembly;
 
+version(WebAssembly):
+
 struct AcquireArgument {
 	int type;
 	const(void)* ptr;

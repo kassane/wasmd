@@ -1,28 +1,50 @@
 // Minimal druntime for webassembly. Assumes your program has a main function.
 module object;
 
-static import arsd.webassembly;
+import rt.hooks;
+version(WebAssembly)
+    static import arsd.webassembly;
+
+version(PSVita) version = CustomRuntimePrinter;
+version(CustomRuntimeTest) version = CustomRuntimePrinter;
 
 version(CarelessAlocation)
 {
 	version = inline_concat;
 }
 
-import core.arsd.memory_allocation;
-
 alias noreturn = typeof(*null);
 alias string = immutable(char)[];
 alias wstring = immutable(wchar)[];
 alias dstring = immutable(dchar)[];
-alias size_t = uint;
-alias ptrdiff_t = int;
+alias size_t = typeof(int.sizeof);
+alias ptrdiff_t = typeof(cast(void*)0 - cast(void*)0);
 
 
 // then the entry point just for convenience so main works.
 extern(C) int _Dmain(string[] args);
-export extern(C) void _start() { _Dmain(null); }
+version(PSVita){}
+else version(WebAssembly)
+{
+    export extern(C) void _start() { _Dmain(null); }
+}
+else
+{
+    export extern(C) int main(int argc, char** argv)
+    {
+        char[][] args;
+        for(int i = 0; i < argc; i++)
+        {
+            size_t l = 0; while(argv[i][l] != '\0') l++;
+            customRuntimePrinter(argv[i][0..l]);
+            args~= argv[i][0..l];
+        }
+        return _Dmain(cast(string[])args);
+    }
+}
 
-extern(C) bool _xopEquals(in void*, in void*) { return false; } // assert(0);
+
+extern(C) bool _xopEquals(const void*, const void*) { return false; } // assert(0);
 
 // basic array support {
 
@@ -52,29 +74,39 @@ void reserve(T)(ref T[] arr, size_t length) @trusted {
 
 
 extern(C) void _d_arraybounds(string file, size_t line) {
-	arsd.webassembly.eval(
-        q{ console.error("Range error: " + $0 + ":" + $1 )}, 
-        file, line);
-	arsd.webassembly.abort();
+	
+    version(WebAssembly)
+        arsd.webassembly.eval(
+            q{ console.error("Range error: " + $0 + ":" + $1 )}, 
+            file, line);
+    else version(CustomRuntimePrinter)
+        customRuntimePrinter("Range Error: ", file, ":", line);
+	rt.hooks.abort();
 }
 
 
 /// Called when an out of range slice of an array is created
 extern(C) void _d_arraybounds_slice(string file, uint line, size_t lwr, size_t upr, size_t length)
 {
-    arsd.webassembly.eval(
+    version(WebAssembly)
+        arsd.webassembly.eval(
         q{ console.error("Range error: " + $0 + ":" + $1 + " [" + $2 + ".." + $3 + "] <> " + $4)}, 
         file, line, lwr, upr, length);
-	arsd.webassembly.abort();
+    else version(CustomRuntimePrinter)
+        customRuntimePrinter("Range Error: ", file, ":", line, " [", lwr, "..", upr, "] <> ", length);
+	rt.hooks.abort();
 }
 
 /// Called when an out of range array index is accessed
 extern(C) void _d_arraybounds_index(string file, uint line, size_t index, size_t length)
 {
-    arsd.webassembly.eval(
-        q{ console.error("Array index " + $0  + " out of bounds '[0.."+$1+"]' " + $2 + ":" + $3)},
-        index, length, file, line);
-	arsd.webassembly.abort();
+    version(WebAssembly)
+        arsd.webassembly.eval(
+            q{ console.error("Array index " + $0  + " out of bounds '[0.."+$1+"]' " + $2 + ":" + $3)},
+            index, length, file, line);
+    else version(CustomRuntimePrinter)
+        customRuntimePrinter("Array index: ", index, " out of bounds '[0..", length,"]'", file, ":", line);
+	rt.hooks.abort();
 }
 
 
@@ -92,6 +124,7 @@ extern(C) void* memset(void* s, int c, size_t n)  @nogc nothrow pure
 pragma(LDC_intrinsic, "llvm.memcpy.p0i8.p0i8.i#")
     void llvm_memcpy(T)(void* dst, const(void)* src, T len, bool volatile_ = false);
 
+version(WebAssembly)
 extern(C) void *memcpy(void* dest, const(void)* src, size_t n) pure @nogc nothrow
 {
 	ubyte *d = cast(ubyte*) dest;
@@ -99,6 +132,8 @@ extern(C) void *memcpy(void* dest, const(void)* src, size_t n) pure @nogc nothro
 	for (; n; n--) *d++ = *s++;
 	return dest;
 }
+else
+extern(C) void *memcpy(void* dest, const(void)* src, size_t n) pure @nogc nothrow;
 
 extern(C) int memcmp(const(void)* s1, const(void*) s2, size_t n) pure @nogc nothrow @trusted
 {
@@ -117,30 +152,76 @@ public import core.arsd.utf_decoding;
 
 // }
 
+version(CustomRuntimePrinter)
+{
+    version(PSVita)
+    {
+        extern(C) int sceClibPrintf(const(char*)fmt, ...) nothrow @nogc pure @safe;
+        alias printFn = sceClibPrintf;
+    }
+    else
+    {
+        private extern(C) int printf(const(char*)fmt, ...) nothrow @nogc pure @safe;
+        private alias printFn = printf;
+    }
+    void customRuntimePrinter(Args...)(Args args) nothrow @nogc pure @trusted
+    {
+        static foreach(v; args)
+        {
+            static if(is(typeof(v) : char))
+                cast(void)printFn("%c", v);
+            else static if(is(typeof(v) : int))
+                cast(void)printFn("%d", v);
+            else static if(is(typeof(v) : string) || is(typeof(v) : char[]))
+                cast(void)printFn("%.*s", v.length, v.ptr);
+        }
+        cast(void)printFn("\n");
+    }
+}
+
+
 extern(C) void _d_assert(string file, uint line)  @trusted @nogc pure
 {
-	arsd.webassembly.eval(q{ console.error("Assert failure: " + $0 + ":" + $1); /*, "[" + $2 + ".." + $3 + "] <> " + $4);*/ }, file, line);//, lwr, upr, length);
-	arsd.webassembly.abort();
+    version(WebAssembly)
+	    arsd.webassembly.eval(q{ console.error("Assert failure: " + $0 + ":" + $1); /*, "[" + $2 + ".." + $3 + "] <> " + $4);*/ }, file, line);//, lwr, upr, length);
+    else version(CustomRuntimePrinter)
+        customRuntimePrinter("Assert Failure: ", file, ":", line);
+	rt.hooks.abort();
 }
 void _d_assertp(immutable(char)* file, uint line)
 {
     // import core.stdc.string : strlen;
     size_t sz = 0;
     while(file[sz] != '\0') sz++;
-    arsd.webassembly.eval(q{ console.error("Assert failure: " + $0 + ":" + $1 + "(" + $2 + ")"); /*, "[" + $2 + ".." + $3 + "] <> " + $4);*/ }, file[0 .. sz], line);//, lwr, upr, length);
-	arsd.webassembly.abort();
+    version(WebAssembly)
+        arsd.webassembly.eval(q{ console.error("Assert failure: " + $0 + ":" + $1 + "(" + $2 + ")"); /*, "[" + $2 + ".." + $3 + "] <> " + $4);*/ }, file[0 .. sz], line);//, lwr, upr, length);
+    else version(CustomRuntimePrinter)
+        customRuntimePrinter("Assert Failure: ", file[0..sz], ":", line);
+	rt.hooks.abort();
 }
 
 
 extern(C) void _d_assert_msg(string msg, string file, uint line) @trusted @nogc pure
 {
-	arsd.webassembly.eval(q{ console.error("Assert failure: " + $0 + ":" + $1 + "(" + $2 + ")"); /*, "[" + $2 + ".." + $3 + "] <> " + $4);*/ }, file, line, msg);//, lwr, upr, length);
-	arsd.webassembly.abort();
+    version(WebAssembly)
+	    arsd.webassembly.eval(q{ console.error("Assert failure: " + $0 + ":" + $1 + "(" + $2 + ")"); /*, "[" + $2 + ".." + $3 + "] <> " + $4);*/ }, file, line, msg);//, lwr, upr, length);
+    else version(CustomRuntimePrinter)
+        customRuntimePrinter("Assert Failure: ", file, ":", line, " (", msg, ")");
+	rt.hooks.abort();
 }
 
+extern (C) noreturn onOutOfMemoryError(void* pretend_sideffect = null) @trusted pure nothrow @nogc /* dmd @@@BUG11461@@@ */
+{
+    assert(false, "Out of memory");
+}
+
+extern (C) noreturn onOutOfMemoryErrorNoGC() @trusted nothrow @nogc
+{
+    assert(false, "Out of memory");
+}
 void __switch_error(string file, size_t line) @trusted @nogc pure
 {
-	_d_assert_msg("final switch error",file, line);
+	_d_assert_msg("final switch error",file, cast(uint)line);
 }
 
 bool __equals(T1, T2)(scope const T1[] lhs, scope const T2[] rhs) {
@@ -454,10 +535,16 @@ private int __switchSearch(T)(/*in*/ const scope T[][] cases, /*in*/ const scope
 }
 
 //TODO: Support someday?
-    extern(C) void _d_throw_exception(Throwable o)
+extern(C) void _d_throw_exception(Throwable o)
+{
+    version(PSVita)
     {
-        assert(false, "Exception throw");
+        import hip.util.conv;
+        assert(false, "Exception throw: " ~ o.file ~ ":" ~ to!string(o.line) ~ " ("~o.message~")");
     }
+    else
+        assert(false, "Exception throw: " ~ o.file~ " ("~o.message~")");
+}
 
 
 // for closures
@@ -555,6 +642,7 @@ class TypeInfo
 	{
 		return (cast(const(void)*) null)[0 .. typeof(null).sizeof];
 	}
+    const(OffsetTypeInfo)[] offTi() const { return null; }
 
 	@property uint flags() nothrow pure const @safe @nogc { return 0; }
 	/// Run the destructor on the object and all its sub-objects
@@ -576,12 +664,19 @@ class TypeInfo_Class : TypeInfo
 	void function(Object) classInvariant;
 	uint flags;
 	void* deallocator;
-	void*[] offTi;
+	OffsetTypeInfo[] m_offTi;
 	void function(Object) defaultConstructor;
 	immutable(void)* rtInfo;
 
 	override @property size_t size() nothrow pure const
     { return Object.sizeof; }
+
+    override string toString() const pure { return name; }
+    override @property const(OffsetTypeInfo)[] offTi() nothrow pure const
+    {
+        return m_offTi;
+    }
+
 
     override size_t getHash(scope const void* p) @trusted const
     {
@@ -700,6 +795,7 @@ class TypeInfo_Pointer : TypeInfo
 
 class TypeInfo_Array : TypeInfo {
 	TypeInfo value;
+    override string toString() const { return value.toString() ~ "[]"; }
 	override size_t size() const { return (void[]).sizeof; }
 	override const(TypeInfo) next() const { return value; }
 
@@ -722,6 +818,10 @@ class TypeInfo_Array : TypeInfo {
         return (void[]).alignof;
     }
 	override const(void)[] initializer() const @trusted { return (cast(void *)null)[0 ..  (void[]).sizeof]; }
+}
+class TypeInfo_Tuple : TypeInfo
+{
+    TypeInfo[] elements;
 }
 
 class TypeInfo_StaticArray : TypeInfo {
@@ -1084,6 +1184,23 @@ class TypeInfo_Enum : TypeInfo {
     }
 }
 
+
+static if(__VERSION__ >= 2106)
+{
+T[] _d_newarrayU(T)(size_t length, bool isShared = false) pure @trusted
+{
+    alias PureM = ubyte[] function(size_t sz, string file = __FILE__, size_t line = __LINE__) pure @trusted nothrow;
+    PureM pureMalloc = cast(PureM)&malloc;
+	return (cast(T*)pureMalloc(length * T.sizeof).ptr)[0..length];
+}
+
+T[] _d_newarrayT(T)(size_t length, bool isShared = false) pure @trusted
+{
+	auto arr = _d_newarrayU!T(length);
+	(cast(byte[])arr)[] = 0;
+	return arr;
+}
+}
 extern (C) void[] _d_newarrayU(const scope TypeInfo ti, size_t length)
 {
 	return malloc(length * ti.next.size);
@@ -1140,21 +1257,35 @@ extern (C) void* _d_newitemU(scope const TypeInfo _ti)
 }
 
 /// ditto
-extern (C) void* _d_newitemT(in TypeInfo _ti)
+static if(__VERSION__ < 2105)
 {
-    auto p = _d_newitemU(_ti);
-    memset(p, 0, _ti.size);
-    return p;
-}
+    extern (C) void* _d_newitemT(in TypeInfo _ti)
+    {
+        auto p = _d_newitemU(_ti);
+        memset(p, 0, _ti.size);
+        return p;
+    }
 
-/// Same as above, for item with non-zero initializer.
-extern (C) void* _d_newitemiT(in TypeInfo _ti)
+    /// Same as above, for item with non-zero initializer.
+    extern (C) void* _d_newitemiT(in TypeInfo _ti)
+    {
+        auto p = _d_newitemU(_ti);
+        auto init = _ti.initializer();
+        assert(init.length <= _ti.size, "init.length <= _ti.size");
+        memcpy(p, init.ptr, init.length);
+        return p;
+    }
+}
+else static if(__VERSION__ >= 2105)
 {
-    auto p = _d_newitemU(_ti);
-    auto init = _ti.initializer();
-    assert(init.length <= _ti.size);
-    memcpy(p, init.ptr, init.length);
-    return p;
+    T* _d_newitemT(T)() @trusted
+    {
+        TypeInfo _ti = typeid(T);
+        auto p = _d_newitemU(_ti);
+        memset(p, 0, _ti.size);
+        return cast(T*)p;
+    }
+
 }
 
 
@@ -1204,52 +1335,24 @@ extern (C) void[] _d_newarraymiTX(const TypeInfo ti, size_t[] dims)
 }
 
 
-
-
-AllocatedBlock* getAllocatedBlock(void* ptr) {
-	auto block = (cast(AllocatedBlock*) ptr) - 1;
-	if(!block.checkChecksum())
-		return null;
-	return block;
-}
-
-/++
-	Marks the memory block as OK to append in-place if possible.
-+/
-void assumeSafeAppend(T)(T[] arr) {
-	auto block = getAllocatedBlock(arr.ptr);
-	if(block is null) assert(0);
-
-	block.used = arr.length;
-}
-
-/++
-	Marks the memory block associated with this array as unique, meaning
-	the runtime is allowed to free the old block immediately instead of
-	keeping it around for other lingering slices.
-
-	In real D, the GC would take care of this but here I have to hack it.
-
-	arsd.webasm extension
-+/
-void assumeUniqueReference(T)(T[] arr) {
-	auto block = getAllocatedBlock(arr.ptr);
-	if(block is null) assert(0);
-
-	block.flags |= AllocatedBlock.Flags.unique;
-}
-
 template _d_arraysetlengthTImpl(Tarr : T[], T) {
-	size_t _d_arraysetlengthT(return scope ref Tarr arr, size_t newlength) @trusted {
+	size_t _d_arraysetlengthT(return scope ref Tarr arr, size_t newlength) @trusted pure {
 		auto orig = arr;
 
 		if(newlength <= arr.length) {
 			arr = arr[0 ..newlength];
 		} else {
-			auto ptr = cast(T*) realloc(cast(ubyte[])arr, newlength * T.sizeof);
+			auto ptr = cast(T*) pureRealloc(cast(ubyte[])arr, newlength * T.sizeof);
 			arr = ptr[0 .. newlength];
 			if(orig !is null) {
-				arr[0 .. orig.length] = orig[];
+                static if(is(Tarr == string))
+				    (cast(char[])arr)[0 .. orig.length] = orig[];
+                else static if(is(Tarr == wstring))
+				    (cast(wchar[])arr)[0 .. orig.length] = orig[];
+                else static if(is(Tarr == dstring))
+				    (cast(dchar[])arr)[0 .. orig.length] = orig[];
+                else
+				    arr[0 .. orig.length] = orig[];
 			}
 		}
 
@@ -1257,30 +1360,140 @@ template _d_arraysetlengthTImpl(Tarr : T[], T) {
 	}
 }
 
-extern (C) byte[] _d_arrayappendcTX(const TypeInfo ti, ref byte[] px, size_t n) @trusted {
-	auto elemSize = ti.next.size;
-	auto newLength = n + px.length;
-	auto newSize = newLength * elemSize;
-	//import std.stdio; writeln(newSize, " ", newLength);
-	ubyte* ptr;
-	if(px.ptr is null)
-		ptr = malloc(newSize).ptr;
-	else // FIXME: anti-stomping by checking length == used
-		ptr = realloc(cast(ubyte[])px, newSize).ptr;
-	auto ns = ptr[0 .. newSize];
-	auto op = px.ptr;
-	auto ol = px.length * elemSize;
+extern (C) void[] _d_arraysetlengthT(const TypeInfo ti, size_t newlength, void[]* p)
+in
+{
+    assert(ti);
+    assert(!(*p).length || (*p).ptr);
+}
+do
+{
+    import core.arsd.objectutils;
+    if (newlength <= (*p).length)
+    {
+        *p = (*p)[0 .. newlength];
+        void* newdata = (*p).ptr;
+        return newdata[0 .. newlength];
+    }
+    auto tinext = ti.next;
+    size_t sizeelem = tinext.size;
 
-	foreach(i, b; op[0 .. ol])
-		ns[i] = b;
+    /* Calculate: newsize = newlength * sizeelem
+     */
+    bool overflow = false;
+    import core.checkedint : mulu;
+    const size_t newsize = mulu(sizeelem, newlength, overflow);
+    if (overflow)
+        onOutOfMemoryError();
 
-	(cast(size_t *)(&px))[0] = newLength;
-	(cast(void **)(&px))[1] = ns.ptr;
-	return px;
+    if (!(*p).ptr)
+    {
+        // pointer was null, need to allocate
+        auto info = malloc(newsize);
+        memset(info.ptr, 0, newsize);
+        *p = info[0 .. newlength];
+        return *p;
+    }
+
+    const size_t size = (*p).length * sizeelem;
+
+    /* Attempt to extend past the end of the existing array.
+     * If not possible, allocate new space for entire array and copy.
+     */
+    auto ptr = pureRealloc(cast(ubyte[])*p, newsize);
+    ptr[0 .. size] = cast(ubyte[])p.ptr[0 .. size];
+
+    /* Do postblit processing, as we are making a copy and the
+    * original array may have references.
+    * Note that this may throw.
+    */
+    __doPostblit(p.ptr, size, tinext);
+
+    // Initialize the unused portion of the newly allocated space
+    memset(p.ptr + size, 0, newsize - size);
+    return *p;
+}
+
+extern (C) void[] _d_arraysetlengthiT(const TypeInfo ti, size_t newlength, void[]* p)
+in
+{
+    assert(!(*p).length || (*p).ptr);
+}
+do
+{
+    import core.arsd.objectutils;
+    if (newlength <= (*p).length)
+    {
+        *p = (*p)[0 .. newlength];
+        void* newdata = (*p).ptr;
+        return newdata[0 .. newlength];
+    }
+    auto tinext = ti.next;
+    size_t sizeelem = tinext.size;
+
+    import core.checkedint : mulu;
+    bool overflow;
+    const size_t newsize = mulu(sizeelem, newlength, overflow);
+    if (overflow)
+        onOutOfMemoryError();
+
+    static void doInitialize(void *start, void *end, const void[] initializer)
+    {
+        if (initializer.length == 1)
+        {
+            memset(start, *(cast(ubyte*)initializer.ptr), end - start);
+        }
+        else
+        {
+            auto q = initializer.ptr;
+            immutable initsize = initializer.length;
+            for (; start < end; start += initsize)
+            {
+                memcpy(start, q, initsize);
+            }
+        }
+    }
+
+    if (!(*p).ptr)
+    {
+        // pointer was null, need to allocate
+        auto info = malloc(newsize);
+        doInitialize(info.ptr, info.ptr + newsize, tinext.initializer);
+        *p = info[0 .. newlength];
+        return *p;
+    }
+
+    const size_t size = (*p).length * sizeelem;
+
+    /* Attempt to extend past the end of the existing array.
+     * If not possible, allocate new space for entire array and copy.
+     */
+    auto ptr = pureRealloc(cast(ubyte[])*p, newsize);
+    ptr[0 .. size] = cast(ubyte[])p.ptr[0 .. size];
+
+    /* Do postblit processing, as we are making a copy and the
+    * original array may have references.
+    * Note that this may throw.
+    */
+    __doPostblit(p.ptr, size, tinext);
+
+    // Initialize the unused portion of the newly allocated space
+    doInitialize(p.ptr + size, p.ptr + newsize, tinext.initializer);
+    return *p;
 }
 
 
-version(inline_concat)
+// extern(C) void[] _d_arraysetlengthiT(const TypeInfo ti, size_t newlength, void[]* p)
+// {
+
+// }
+
+public import core.array.v2102;
+public import core.array.v2099;
+
+
+
+version(inline_concat) static if(__VERSION__ < 2105)
 extern(C) void[] _d_arraycatnTX(const TypeInfo ti, scope byte[][] arrs) @trusted
 {
 	auto elemSize = ti.next.size;
@@ -1289,6 +1502,7 @@ extern(C) void[] _d_arraycatnTX(const TypeInfo ti, scope byte[][] arrs) @trusted
         length += b.length;
 	if(!length)
 		return null;
+
 	ubyte* ptr = cast(ubyte*)malloc(length * elemSize);
 
 	//Copy data
@@ -1305,7 +1519,72 @@ extern(C) void[] _d_arraycatnTX(const TypeInfo ti, scope byte[][] arrs) @trusted
 	return cast(void[])ptr[0..length];
 }
 
-version(inline_concat)
+version(inline_concat) static if(__VERSION__ >= 2105)
+Tret _d_arraycatnTX(Tret, Tarr...)(auto ref Tarr froms) @trusted
+{
+    import core.internal.traits : hasElaborateCopyConstructor, Unqual;
+    import core.lifetime : copyEmplace;
+
+    Tret res;
+    size_t totalLen;
+
+    alias T = typeof(res[0]);
+    enum elemSize = T.sizeof;
+    enum hasPostblit = __traits(hasPostblit, T);
+
+    static foreach (from; froms)
+        static if (is (typeof(from) : T))
+            totalLen++;
+        else
+            totalLen += from.length;
+
+    if (totalLen == 0)
+        return res;
+
+    _d_arraysetlengthTImpl!(typeof(res))._d_arraysetlengthT(res, totalLen);
+
+    /* Currently, if both a postblit and a cpctor are defined, the postblit is
+     * used. If this changes, the condition below will have to be adapted.
+     */
+    static if (hasElaborateCopyConstructor!T && !hasPostblit)
+    {
+        size_t i = 0;
+        foreach (ref from; froms)
+            static if (is (typeof(from) : T))
+                copyEmplace(cast(T) from, res[i++]);
+            else
+            {
+                if (from.length)
+                    foreach (ref elem; from)
+                        copyEmplace(cast(T) elem, res[i++]);
+            }
+    }
+    else
+    {
+        auto resptr = cast(Unqual!T *) res;
+        foreach (ref from; froms)
+            static if (is (typeof(from) : T))
+                memcpy(resptr++, cast(Unqual!T *) &from, elemSize);
+            else
+            {
+                const len = from.length;
+                if (len)
+                {
+                    memcpy(resptr, cast(Unqual!T *) from, len * elemSize);
+                    resptr += len;
+                }
+            }
+
+        static if (hasPostblit)
+            foreach (ref elem; res)
+                (cast() elem).__xpostblit();
+    }
+
+    return res;
+}
+
+
+version(inline_concat) static if(__VERSION__ < 2105)
 extern (C) byte[] _d_arraycatT(const TypeInfo ti, byte[] x, byte[] y)
 {
     import core.arsd.objectutils;
@@ -1371,7 +1650,7 @@ extern (C) void[] _d_arrayappendcd(ref byte[] x, dchar c)
 
 
 alias AliasSeq(T...) = T;
-static foreach(type; AliasSeq!(byte, char, dchar, double, float, int, long, short, ubyte, uint, ulong, ushort, void, wchar)) {
+static foreach(type; AliasSeq!(bool, byte, char, dchar, double, float, int, long, short, ubyte, uint, ulong, ushort, void, wchar)) {
 	mixin(q{
 		class TypeInfo_}~type.mangleof~q{ : TypeInfo {
             override string toString() const pure nothrow @safe { return type.stringof; }
@@ -1405,7 +1684,7 @@ static foreach(type; AliasSeq!(byte, char, dchar, double, float, int, long, shor
 		}
 		class TypeInfo_A}~type.mangleof~q{ : TypeInfo_Array {
             override string toString() const { return (type[]).stringof; }
-			override const(TypeInfo) next() const { return cast(inout)typeid(type); }
+			override @property const(TypeInfo) next() const { return cast(inout)typeid(type); }
             override size_t getHash(scope const void* p) @trusted const nothrow
             {
                 return hashOf(*cast(const type[]*) p);
@@ -1633,28 +1912,29 @@ class TypeInfo_Struct : TypeInfo {
 	void function(void*) xpostblit;
 	uint align_;
 	immutable(void)* rtinfo;
-    // private struct _memberFunc //? Is it necessary
-    // {
-    //     union
-    //     {
-    //         struct // delegate
-    //         {
-    //             const void* ptr;
-    //             const void* funcptr;
-    //         }
-    //         @safe pure nothrow
-    //         {
-    //             bool delegate(in void*) xopEquals;
-    //             int delegate(in void*) xopCmp;
-    //         }
-    //     }
-    // }
+    private struct _memberFunc //? Is it necessary
+    {
+        union
+        {
+            struct // delegate
+            {
+                const void* ptr;
+                const void* funcptr;
+            }
+            @safe pure nothrow
+            {
+                bool delegate(in void*) xopEquals;
+                int delegate(in void*) xopCmp;
+            }
+        }
+    }
 
 	enum StructFlags : uint
 	{
 		hasPointers = 0x1,
 		isDynamicType = 0x2, // built at runtime, needs type info in xdtor
 	}
+    override string toString() const { return name; }
 	override size_t size() const { return m_init.length; }
 	override @property uint flags() nothrow pure const @safe @nogc { return m_flags; }
 
@@ -1717,10 +1997,9 @@ class TypeInfo_Struct : TypeInfo {
 	{
 		return m_init;
 	}
-
 }
 
-extern(C) bool _xopCmp(in void*, in void*) { return false; }
+extern(C) bool _xopCmp(const void*, const void*) { return false; }
 
 // }
 
@@ -1730,39 +2009,30 @@ void __ArrayDtor(T)(scope T[] a)
         e.__xdtor();
 }
 
-TTo[] __ArrayCast(TFrom, TTo)(return scope TFrom[] from) nothrow
+private void onArrayCastError(string typeFrom, size_t fromSize, string typeTo, size_t toSize) nothrow
+{
+    version(CustomRuntimePrinter)
+        customRuntimePrinter("Invalid ArrayCast from ", typeFrom, "(", fromSize,")", " to ", typeTo, "(", toSize,")");
+    import rt.hooks;
+    abort();
+}
+
+TTo[] __ArrayCast(TFrom, TTo)(return scope TFrom[] from, string file = __FILE__) nothrow
 {
     const fromSize = from.length * TFrom.sizeof;
     const toLength = fromSize / TTo.sizeof;
 
     if ((fromSize % TTo.sizeof) != 0)
-    {
-        //onArrayCastError(TFrom.stringof, fromSize, TTo.stringof, toLength * TTo.sizeof);
-	import arsd.webassembly;
-	abort();
-    }
+        onArrayCastError(TFrom.stringof, fromSize, TTo.stringof, toLength * TTo.sizeof);
 
     struct Array
     {
         size_t length;
         void* ptr;
     }
-    auto a = cast(Array*)&from;
+    auto a = cast(Array*)cast(void*)&from;
     a.length = toLength; // jam new length
     return *cast(TTo[]*)a;
-}
-
-extern (C) void[] _d_arrayappendT(const TypeInfo ti, ref byte[] x, byte[] y)
-{
-    auto length = x.length;
-    auto tinext = ti.next;
-    auto sizeelem = tinext./*t*/size;              // array element size
-    _d_arrayappendcTX(ti, x, y.length);
-    memcpy(x.ptr + length * sizeelem, y.ptr, y.length * sizeelem);
-
-    // do postblit
-    //__doPostblit(x.ptr + length * sizeelem, y.length * sizeelem, tinext);
-    return x;
 }
 
 extern (C) int _adEq2(void[] a1, void[] a2, TypeInfo ti)
@@ -1854,6 +2124,8 @@ class Throwable : Object
         int opApply(scope int delegate(ref size_t, ref const(char[]))) const;
         string toString() const;
     }
+
+    alias TraceDeallocator = void function(TraceInfo) nothrow;
 
     string      msg;    /// A message describing the error.
 

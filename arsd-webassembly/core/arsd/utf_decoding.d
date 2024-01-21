@@ -64,7 +64,7 @@ Params:
 Returns:
     non-zero when the loop was exited through a `break`
 */
-extern (C) int _aApplycd1(in char[] aa, dg_t dg)
+extern (C) int _aApplycd1(const(char)[] aa, dg_t dg)
 {
     int result;
     size_t len = aa.length;
@@ -87,7 +87,7 @@ extern (C) int _aApplycd1(in char[] aa, dg_t dg)
 
 
 /// ditto
-extern (C) int _aApplywd1(in wchar[] aa, dg_t dg)
+extern (C) int _aApplywd1(const(wchar)[] aa, dg_t dg)
 {
     int result;
     size_t len = aa.length;
@@ -109,7 +109,7 @@ extern (C) int _aApplywd1(in wchar[] aa, dg_t dg)
 
 
 /// ditto
-extern (C) int _aApplycw1(in char[] aa, dg_t dg)
+extern (C) int _aApplycw1(const(char)[] aa, dg_t dg)
 {
     int result;
     size_t len = aa.length;
@@ -143,7 +143,7 @@ extern (C) int _aApplycw1(in char[] aa, dg_t dg)
 
 
 /// ditto
-extern (C) int _aApplywc1(in wchar[] aa, dg_t dg)
+extern (C) int _aApplywc1(const(wchar)[] aa, dg_t dg)
 {
     int result;
     size_t len = aa.length;
@@ -179,7 +179,7 @@ extern (C) int _aApplywc1(in wchar[] aa, dg_t dg)
 
 
 /// ditto
-extern (C) int _aApplydc1(in dchar[] aa, dg_t dg)
+extern (C) int _aApplydc1(const (dchar)[] aa, dg_t dg)
 {
     int result;
 
@@ -211,7 +211,7 @@ extern (C) int _aApplydc1(in dchar[] aa, dg_t dg)
 
 
 /// ditto
-extern (C) int _aApplydw1(in dchar[] aa, dg_t dg)
+extern (C) int _aApplydw1(const(dchar)[] aa, dg_t dg)
 {
     int result;
 
@@ -255,7 +255,7 @@ extern (D) alias dg2_t = int delegate(void* i, void* c);
 /**
 Variants of _aApplyXXX that include a loop index.
 */
-extern (C) int _aApplycd2(in char[] aa, dg2_t dg)
+extern (C) int _aApplycd2(const(char)[] aa, dg2_t dg)
 {
     int result;
     size_t len = aa.length;
@@ -281,7 +281,7 @@ extern (C) int _aApplycd2(in char[] aa, dg2_t dg)
 }
 
 /// ditto
-extern (C) int _aApplywd2(in wchar[] aa, dg2_t dg)
+extern (C) int _aApplywd2(const(wchar)[] aa, dg2_t dg)
 {
     int result;
     size_t len = aa.length;
@@ -307,7 +307,7 @@ extern (C) int _aApplywd2(in wchar[] aa, dg2_t dg)
 }
 
 /// ditto
-extern (C) int _aApplycw2(in char[] aa, dg2_t dg)
+extern (C) int _aApplycw2(const(char)[] aa, dg2_t dg)
 {
     int result;
     size_t len = aa.length;
@@ -344,7 +344,7 @@ extern (C) int _aApplycw2(in char[] aa, dg2_t dg)
 
 
 /// ditto
-extern (C) int _aApplywc2(in wchar[] aa, dg2_t dg)
+extern (C) int _aApplywc2(const(wchar)[] aa, dg2_t dg)
 {
     int result;
     size_t len = aa.length;
@@ -383,7 +383,7 @@ extern (C) int _aApplywc2(in wchar[] aa, dg2_t dg)
 
 
 /// ditto
-extern (C) int _aApplydc2(in dchar[] aa, dg2_t dg)
+extern (C) int _aApplydc2(const(dchar)[] aa, dg2_t dg)
 {
     int result;
     size_t len = aa.length;
@@ -417,7 +417,7 @@ extern (C) int _aApplydc2(in dchar[] aa, dg2_t dg)
 
 
 /// ditto
-extern (C) int _aApplydw2(in dchar[] aa, dg2_t dg)
+extern (C) int _aApplydw2(const(dchar)[] aa, dg2_t dg)
 {   int result;
 
     debug(apply) printf("_aApplydw2(), len = %d\n", aa.length);
