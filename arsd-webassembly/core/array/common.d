@@ -25,12 +25,6 @@ extern (C) byte[] _d_arrayappendcTX(const TypeInfo ti, ref byte[] px, size_t n) 
 	foreach(i, b; op[0 .. ol])
 		ns[i] = b;
 
-    version(PSVita)
-    {
-        if(hasReallocated)
-            rt.hooks.free(cast(ubyte*)op);
-    }
-
 	(cast(size_t *)(&px))[0] = newLength;
 	(cast(void **)(&px))[1] = ns.ptr;
 	return px;

@@ -5,7 +5,6 @@ import rt.hooks;
 version(WebAssembly)
     static import arsd.webassembly;
 
-version(PSVita) version = CustomRuntimePrinter;
 version(CustomRuntimeTest) version = CustomRuntimePrinter;
 
 version(CarelessAlocation)
@@ -23,8 +22,7 @@ alias ptrdiff_t = typeof(cast(void*)0 - cast(void*)0);
 
 // then the entry point just for convenience so main works.
 extern(C) int _Dmain(string[] args);
-version(PSVita){}
-else version(WebAssembly)
+version(WebAssembly)
 {
     export extern(C) void _start() { _Dmain(null); }
 }
@@ -154,16 +152,8 @@ public import core.arsd.utf_decoding;
 
 version(CustomRuntimePrinter)
 {
-    version(PSVita)
-    {
-        extern(C) int sceClibPrintf(const(char*)fmt, ...) nothrow @nogc pure @safe;
-        alias printFn = sceClibPrintf;
-    }
-    else
-    {
-        private extern(C) int printf(const(char*)fmt, ...) nothrow @nogc pure @safe;
-        private alias printFn = printf;
-    }
+    private extern(C) int printf(const(char*)fmt, ...) nothrow @nogc pure @safe;
+    private alias printFn = printf;
     void customRuntimePrinter(Args...)(Args args) nothrow @nogc pure @trusted
     {
         static foreach(v; args)
@@ -537,13 +527,7 @@ private int __switchSearch(T)(/*in*/ const scope T[][] cases, /*in*/ const scope
 //TODO: Support someday?
 extern(C) void _d_throw_exception(Throwable o)
 {
-    version(PSVita)
-    {
-        import hip.util.conv;
-        assert(false, "Exception throw: " ~ o.file ~ ":" ~ to!string(o.line) ~ " ("~o.message~")");
-    }
-    else
-        assert(false, "Exception throw: " ~ o.file~ " ("~o.message~")");
+    assert(false, "Exception throw: " ~ o.file~ " ("~o.message~")");
 }
 
 
