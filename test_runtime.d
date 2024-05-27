@@ -1,3 +1,5 @@
+// ldc2 -i=. --d-version=CarelessAlocation -i=std -Iarsd-webassembly/ -L-allow-undefined -ofserver/omg.wasm -mtriple=wasm32-unknown-unknown-wasm arsd-webassembly/core/arsd/aa arsd-webassembly/core/arsd/objectutils arsd-webassembly/core/internal/utf arsd-webassembly/core/arsd/utf_decoding hello arsd-webassembly/object.d
+
 import arsd.webassembly;
 import std.stdio;
 

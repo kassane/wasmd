@@ -20,6 +20,7 @@
  */
 
 module core.internal.utf;
+import core.internal.assertion;
 
 extern (C) void onUnicodeError( string msg, size_t idx, string file = __FILE__, uint line = __LINE__ ) @trusted
 {
