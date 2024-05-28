@@ -1,6 +1,6 @@
 module core.lifetime;
 import core.internal.attributes : betterC;
-import core.internal.platform.memory;
+import core.arsd.memory_allocation;
 
 // emplace
 /**
@@ -3000,4 +3000,10 @@ version (D_ProfileGC) {
         } else
             assert(0, "Cannot create new `struct` if compiling without support for runtime type information!");
     }
+}
+
+template TypeInfoSize(T)
+{
+    import core.internal.traits : hasElaborateDestructor;
+    enum TypeInfoSize = (is (T == struct) && hasElaborateDestructor!T) ? size_t.sizeof : 0;
 }

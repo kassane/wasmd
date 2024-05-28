@@ -9,7 +9,6 @@
  */
 module core.internal.atomic;
 
-import gcc.config;
 import core.atomic;
 
 private {
@@ -79,271 +78,204 @@ private {
     }
 }
 
-/* NOTE: This file has been patched from the original DMD distribution to
- * work with the GDC compiler. And further patched to work with tinyd-rt
- */
-version (GNU) {
-    import gcc.builtins;
+ alias atomicCompareExchangeWeak = atomicCompareExchangeStrong;
 
-    T atomicOp(string op, T, V1)(ref T val, V1 mod) pure nothrow @nogc @trusted
-            if (__traits(compiles, mixin("*cast(T*)&val" ~ op ~ "mod")) && !is(T == shared)) {
-        // binary operators
-        //
-        // +    -   *   /   %   ^^  &
-        // |    ^   <<  >>  >>> ~   in
-        // ==   !=  <   <=  >   >=
-        static if (op == "+" || op == "-" || op == "*" || op == "/" ||
-            op == "%" || op == "^^" || op == "&" || op == "|" ||
-            op == "^" || op == "<<" || op == ">>" || op == ">>>" ||
-            op == "~" ||  // skip "in"
-            op == "==" || op == "!=" || op == "<" || op == "<=" ||
-            op == ">" || op == ">=") {
-            T get = atomicLoad!(MemoryOrder.raw)(val);
-            mixin("return get " ~ op ~ " mod;");
-        } else { // assignment operators
-            //
-            // +=   -=  *=  /=  %=  ^^= &=
-            // |=   ^=  <<= >>= >>>=    ~=
-            static if (op == "+=" || op == "-=" || op == "*=" || op == "/=" ||
-                op == "%=" || op == "^^=" || op == "&=" || op == "|=" ||
-                op == "^=" || op == "<<=" || op == ">>=" || op == ">>>=") // skip "~="
+    bool atomicCompareExchangeStrong(MemoryOrder succ = MemoryOrder.seq, MemoryOrder fail = MemoryOrder.seq, T)(T* dest, T* compare, T value) pure nothrow @nogc @trusted
+        if (CanCAS!T)
+    {
+        static assert(fail != MemoryOrder.rel && fail != MemoryOrder.acq_rel,
+                      "Invalid fail MemoryOrder for atomicCompareExchangeStrong()");
+        static assert (succ >= fail, "The first MemoryOrder argument for atomicCompareExchangeStrong() cannot be weaker than the second argument");
+        bool success;
+
+        static if (T.sizeof == size_t.sizeof * 2)
+        {
+            // some values simply cannot be loa'd here, so we'll use an intermediary pointer that we can move instead
+            T* valuePointer = &value;
+
+            version (D_InlineAsm_X86)
+            {
+                asm pure nothrow @nogc @trusted
                 {
-                    T get, set;
+                    push EBX; // call preserved
+                    push EDI;
 
-                    do {
-                        get = set = atomicLoad!(MemoryOrder.raw)(val);
-                        mixin("set " ~ op ~ " mod;");
-                    }
-                    while (!cas(&val, get, set));
-                    return set;
+                    mov EDI, valuePointer; // value
+                    mov EBX, [EDI];
+                    mov ECX, [EDI + size_t.sizeof];
+                    mov EDI, compare; // [compare]
+                    mov EAX, [EDI];
+                    mov EDX, [EDI + size_t.sizeof];
+
+                    mov EDI, dest;
+                    lock; cmpxchg8b [EDI];
+
+                    setz success;
+                    mov EDI, compare;
+                    mov [EDI], EAX;
+                    mov [EDI + size_t.sizeof], EDX;
+
+                    pop EDI;
+                    pop EBX;
                 }
-            else {
-                static assert(false, "Operation not supported.");
             }
+            else version (D_InlineAsm_X86_64)
+            {
+                asm pure nothrow @nogc @trusted
+                {
+                    push RBX; // call preserved
+
+                    mov R8, valuePointer; // value
+                    mov RBX, [R8];
+                    mov RCX, [R8 + size_t.sizeof];
+                    mov R8, compare; // [compare]
+                    mov RAX, [R8];
+                    mov RDX, [R8 + size_t.sizeof];
+
+                    mov R8, dest;
+                    lock; cmpxchg16b [R8];
+
+                    setz success;
+                    mov R8, compare;
+                    mov [R8], RAX;
+                    mov [R8 + size_t.sizeof], RDX;
+
+                    pop RBX;
+                }
+            }
+            else
+                static assert(0, "Operation not supported");
         }
-    }
-
-    TailShared!T atomicOp(string op, T, V1)(ref shared T val, V1 mod) pure nothrow @nogc @trusted
-            if (__traits(compiles, mixin("*cast(T*)&val" ~ op ~ "mod"))) {
-        // binary operators
-        //
-        // +    -   *   /   %   ^^  &
-        // |    ^   <<  >>  >>> ~   in
-        // ==   !=  <   <=  >   >=
-        static if (op == "+" || op == "-" || op == "*" || op == "/" ||
-            op == "%" || op == "^^" || op == "&" || op == "|" ||
-            op == "^" || op == "<<" || op == ">>" || op == ">>>" ||
-            op == "~" ||  // skip "in"
-            op == "==" || op == "!=" || op == "<" || op == "<=" ||
-            op == ">" || op == ">=") {
-            TailShared!T get = atomicLoad!(MemoryOrder.raw)(val);
-            mixin("return get " ~ op ~ " mod;");
-        } else // assignment operators
-            //
-            // +=   -=  *=  /=  %=  ^^= &=
-            // |=   ^=  <<= >>= >>>=    ~=
-            static if (op == "+=" || op == "-=" || op == "*=" || op == "/=" ||
-                op == "%=" || op == "^^=" || op == "&=" || op == "|=" ||
-                op == "^=" || op == "<<=" || op == ">>=" || op == ">>>=") // skip "~="
-                {
-                    TailShared!T get, set;
-
-                    do {
-                        get = set = atomicLoad!(MemoryOrder.raw)(val);
-                        mixin("set " ~ op ~ " mod;");
-                    }
-                    while (!cas(&val, get, set));
-                    return set;
-                }
-            else {
-                static assert(false, "Operation not supported.");
+        else
+        {
+            version (D_InlineAsm_X86)
+            {
             }
+            else version (D_InlineAsm_X86_64)
+            {
+            }
+            else
+                static assert(0, "Operation not supported");
+
+            enum SrcReg = SizedReg!CX;
+            enum ValueReg = SizedReg!(DX, T);
+            enum CompareReg = SizedReg!(AX, T);
+
+            mixin (simpleFormat(q{
+                asm pure nothrow @nogc @trusted
+                {
+                    mov %1, value;
+                    mov %0, compare;
+                    mov %2, [%0];
+
+                    mov %0, dest;
+                    lock; cmpxchg [%0], %1;
+
+                    setz success;
+                    mov %0, compare;
+                    mov [%0], %2;
+                }
+            }, [SrcReg, ValueReg, CompareReg]));
+        }
+
+        return success;
     }
 
-    bool cas(T, V1, V2)(shared(T)* here, const V1 ifThis, V2 writeThis) pure nothrow @nogc @safe
-            if (!is(T == class) && !is(T U : U*) && __traits(compiles, {
-                    *here = writeThis;
-                })) {
-        return casImpl(here, ifThis, writeThis);
-    }
+    alias atomicCompareExchangeWeakNoResult = atomicCompareExchangeStrongNoResult;
 
-    bool cas(T, V1, V2)(shared(T)* here, const shared(V1) ifThis, shared(V2) writeThis) pure nothrow @nogc @safe
-            if (is(T == class) && __traits(compiles, { *here = writeThis; })) {
-        return casImpl(here, ifThis, writeThis);
-    }
+    bool atomicCompareExchangeStrongNoResult(MemoryOrder succ = MemoryOrder.seq, MemoryOrder fail = MemoryOrder.seq, T)(T* dest, const T compare, T value) pure nothrow @nogc @trusted
+        if (CanCAS!T)
+    {
+        static assert(fail != MemoryOrder.rel && fail != MemoryOrder.acq_rel,
+                      "Invalid fail MemoryOrder for atomicCompareExchangeStrongNoResult()");
+        static assert (succ >= fail, "The first MemoryOrder argument for atomicCompareExchangeStrongNoResult() cannot be weaker than the second argument");
+        bool success;
 
-    bool cas(T, V1, V2)(shared(T)* here, const shared(V1)* ifThis, shared(V2)* writeThis) pure nothrow @nogc @safe
-            if (is(T U : U*) && __traits(compiles, { *here = writeThis; })) {
-        return casImpl(here, ifThis, writeThis);
-    }
+        static if (T.sizeof == size_t.sizeof * 2)
+        {
+            // some values simply cannot be loa'd here, so we'll use an intermediary pointer that we can move instead
+            T* valuePointer = &value;
+            const(T)* comparePointer = &compare;
 
-    private bool casImpl(T, V1, V2)(shared(T)* here, V1 ifThis, V2 writeThis) pure nothrow @nogc @trusted
-        if(is(T == shared)) {
-        static assert(GNU_Have_Atomics, "cas() not supported on this architecture");
-        bool res = void;
+            version (D_InlineAsm_X86)
+            {
+                asm pure nothrow @nogc @trusted
+                {
+                    push EBX; // call preserved
+                    push EDI;
 
-        static if (T.sizeof == byte.sizeof) {
-            res = __atomic_compare_exchange_1(here, cast(void*)&ifThis, *cast(ubyte*)&writeThis,
-                false, MemoryOrder.seq, MemoryOrder.seq);
-        } else static if (T.sizeof == short.sizeof) {
-            res = __atomic_compare_exchange_2(here, cast(void*)&ifThis, *cast(ushort*)&writeThis,
-                false, MemoryOrder.seq, MemoryOrder.seq);
-        } else static if (T.sizeof == int.sizeof) {
-            res = __atomic_compare_exchange_4(here, cast(void*)&ifThis, *cast(uint*)&writeThis,
-                false, MemoryOrder.seq, MemoryOrder.seq);
-        } else static if (T.sizeof == long.sizeof && GNU_Have_64Bit_Atomics) {
-            res = __atomic_compare_exchange_8(here, cast(void*)&ifThis, *cast(ulong*)&writeThis,
-                false, MemoryOrder.seq, MemoryOrder.seq);
-        } else static if (GNU_Have_LibAtomic) {
-            res = __atomic_compare_exchange(T.sizeof, here, cast(void*)&ifThis, cast(void*)&writeThis,
-                MemoryOrder.seq, MemoryOrder.seq);
-        } else
-            static assert(0, "Invalid template type specified.");
+                    mov EDI, valuePointer; // value
+                    mov EBX, [EDI];
+                    mov ECX, [EDI + size_t.sizeof];
+                    mov EDI, comparePointer; // compare
+                    mov EAX, [EDI];
+                    mov EDX, [EDI + size_t.sizeof];
 
-        return res;
+                    mov EDI, dest;
+                    lock; cmpxchg8b [EDI];
+
+                    setz success;
+
+                    pop EDI;
+                    pop EBX;
+                }
+            }
+            else version (D_InlineAsm_X86_64)
+            {
+                asm pure nothrow @nogc @trusted
+                {
+                    push RBX; // call preserved
+
+                    mov R8, valuePointer; // value
+                    mov RBX, [R8];
+                    mov RCX, [R8 + size_t.sizeof];
+                    mov R8, comparePointer; // compare
+                    mov RAX, [R8];
+                    mov RDX, [R8 + size_t.sizeof];
+
+                    mov R8, dest;
+                    lock; cmpxchg16b [R8];
+
+                    setz success;
+
+                    pop RBX;
+                }
+            }
+            else
+                static assert(0, "Operation not supported");
+        }
+        else
+        {
+            version (D_InlineAsm_X86)
+            {
+            }
+            else version (D_InlineAsm_X86_64)
+            {
+            }
+            else
+                static assert(0, "Operation not supported");
+
+            enum SrcReg = SizedReg!CX;
+            enum ValueReg = SizedReg!(DX, T);
+            enum CompareReg = SizedReg!(AX, T);
+
+            mixin (simpleFormat(q{
+                asm pure nothrow @nogc @trusted
+                {
+                    mov %1, value;
+                    mov %2, compare;
+
+                    mov %0, dest;
+                    lock; cmpxchg [%0], %1;
+
+                    setz success;
+                }
+            }, [SrcReg, ValueReg, CompareReg]));
+        }
+
+        return success;
     }
     
-
-    bool cas(T, V1, V2)(T* here, const V1 ifThis, V2 writeThis) pure nothrow @nogc @safe
-            if (!is(T == class) && !is(T U : U*) && __traits(compiles, {
-                    *here = writeThis;
-                }) && !is(T == shared)) {
-        return casImpl(here, ifThis, writeThis);
-    }
-
-    bool cas(T, V1, V2)(T* here, const V1 ifThis, V2 writeThis) pure nothrow @nogc @safe
-            if (is(T == class) && __traits(compiles, { *here = writeThis; }) && !is(T == shared)) {
-        return casImpl(here, ifThis, writeThis);
-    }
-
-    bool cas(T, V1, V2)(T* here, const V1* ifThis, V2* writeThis) pure nothrow @nogc @safe
-            if (is(T U : U*) && __traits(compiles, { *here = writeThis; }) && !is(T == shared)) {
-        return casImpl(here, ifThis, writeThis);
-    }
-
-    private bool casImpl(T, V1, V2)(T* here, V1 ifThis, V2 writeThis) pure nothrow @nogc @trusted 
-        if(!is(T == shared)) {
-        static assert(GNU_Have_Atomics, "cas() not supported on this architecture");
-        bool res = void;
-
-        static if (T.sizeof == byte.sizeof) {
-            res = __atomic_compare_exchange_1(cast(shared(T)*)here, cast(void*)&ifThis, *cast(ubyte*)&writeThis,
-                false, MemoryOrder.seq, MemoryOrder.seq);
-        } else static if (T.sizeof == short.sizeof) {
-            res = __atomic_compare_exchange_2(cast(shared(T)*)here, cast(void*)&ifThis, *cast(ushort*)&writeThis,
-                false, MemoryOrder.seq, MemoryOrder.seq);
-        } else static if (T.sizeof == int.sizeof) {
-            res = __atomic_compare_exchange_4(cast(shared(T)*)here, cast(void*)&ifThis, *cast(uint*)&writeThis,
-                false, MemoryOrder.seq, MemoryOrder.seq);
-        } else static if (T.sizeof == long.sizeof && GNU_Have_64Bit_Atomics) {
-            res = __atomic_compare_exchange_8(cast(shared(T)*)here, cast(void*)&ifThis, *cast(ulong*)&writeThis,
-                false, MemoryOrder.seq, MemoryOrder.seq);
-        } else static if (GNU_Have_LibAtomic) {
-            res = __atomic_compare_exchange(T.sizeof, cast(shared(T)*)here, cast(void*)&ifThis, cast(void*)&writeThis,
-                MemoryOrder.seq, MemoryOrder.seq);
-        } else
-            static assert(0, "Invalid template type specified.");
-
-        return res;
-    }
-
-    T atomicLoad(MemoryOrder ms = MemoryOrder.seq, T)(ref const T val) pure nothrow @nogc @trusted
-            if (!__traits(isFloating, T) && !is(T == shared)) {
-        static assert(ms != MemoryOrder.rel, "Invalid MemoryOrder for atomicLoad");
-        static assert(__traits(isPOD, T), "argument to atomicLoad() must be POD");
-        static assert(GNU_Have_Atomics, "atomicLoad() not supported on this architecture");
-
-        static if (T.sizeof == ubyte.sizeof) {
-            ubyte value = __atomic_load_1(cast(shared(const(void))*)&val, ms);
-            return *cast(T*)&value;
-        } else static if (T.sizeof == ushort.sizeof) {
-            ushort value = __atomic_load_2(cast(shared(const(void))*)&val, ms);
-            return *cast(T*)&value;
-        } else static if (T.sizeof == uint.sizeof) {
-            uint value = __atomic_load_4(cast(shared(const(void))*)&val, ms);
-            return *cast(T*)&value;
-        } else static if (T.sizeof == ulong.sizeof && GNU_Have_64Bit_Atomics) {
-            ulong value = __atomic_load_8(cast(shared(const(void))*)&val, ms);
-            return *cast(T*)&value;
-        } else static if (GNU_Have_LibAtomic) {
-            T value;
-            __atomic_load(T.sizeof, cast(shared(const(void))*)&val, cast(void*)&value, ms);
-            return *cast(T*)&value;
-        } else
-            static assert(0, "Invalid template type specified.");
-    }
-
-    TailShared!T atomicLoad(MemoryOrder ms = MemoryOrder.seq, T)(ref const shared T val) pure nothrow @nogc @trusted
-            if (!__traits(isFloating, T)) {
-        static assert(ms != MemoryOrder.rel, "Invalid MemoryOrder for atomicLoad");
-        static assert(__traits(isPOD, T), "argument to atomicLoad() must be POD");
-        static assert(GNU_Have_Atomics, "atomicLoad() not supported on this architecture");
-
-        static if (T.sizeof == ubyte.sizeof) {
-            ubyte value = __atomic_load_1(&val, ms);
-            return *cast(TailShared!T*)&value;
-        } else static if (T.sizeof == ushort.sizeof) {
-            ushort value = __atomic_load_2(&val, ms);
-            return *cast(TailShared!T*)&value;
-        } else static if (T.sizeof == uint.sizeof) {
-            uint value = __atomic_load_4(&val, ms);
-            return *cast(TailShared!T*)&value;
-        } else static if (T.sizeof == ulong.sizeof && GNU_Have_64Bit_Atomics) {
-            ulong value = __atomic_load_8(&val, ms);
-            return *cast(TailShared!T*)&value;
-        } else static if (GNU_Have_LibAtomic) {
-            T value;
-            __atomic_load(T.sizeof, &val, cast(void*)&value, ms);
-            return *cast(TailShared!T*)&value;
-        } else
-            static assert(0, "Invalid template type specified.");
-    }
-
-    void atomicStore(MemoryOrder ms = MemoryOrder.seq, T, V1)(ref shared T val, V1 newval) pure nothrow @nogc @trusted
-            if (__traits(compiles, { val = newval; }) && !is(T == shared)) {
-        static assert(ms != MemoryOrder.acq, "Invalid MemoryOrder for atomicStore");
-        static assert(__traits(isPOD, T), "argument to atomicLoad() must be POD");
-        static assert(GNU_Have_Atomics, "atomicStore() not supported on this architecture");
-
-        static if (T.sizeof == ubyte.sizeof) {
-            __atomic_store_1(&val, *cast(ubyte*)&newval, ms);
-        } else static if (T.sizeof == ushort.sizeof) {
-            __atomic_store_2(&val, *cast(ushort*)&newval, ms);
-        } else static if (T.sizeof == uint.sizeof) {
-            __atomic_store_4(&val, *cast(uint*)&newval, ms);
-        } else static if (T.sizeof == ulong.sizeof && GNU_Have_64Bit_Atomics) {
-            __atomic_store_8(&val, *cast(ulong*)&newval, ms);
-        } else static if (GNU_Have_LibAtomic) {
-            __atomic_store(T.sizeof, &val, cast(void*)&newval, ms);
-        } else
-            static assert(0, "Invalid template type specified.");
-    }
-
-    void atomicStore(MemoryOrder ms = MemoryOrder.seq, T, V1)(ref T val, V1 newval) pure nothrow @nogc @trusted
-            if (__traits(compiles, { val = newval; })) {
-        static assert(ms != MemoryOrder.acq, "Invalid MemoryOrder for atomicStore");
-        static assert(__traits(isPOD, T), "argument to atomicLoad() must be POD");
-        static assert(GNU_Have_Atomics, "atomicStore() not supported on this architecture");
-
-        static if (T.sizeof == ubyte.sizeof) {
-            __atomic_store_1(cast(shared(void)*)&val, *cast(ubyte*)&newval, ms);
-        } else static if (T.sizeof == ushort.sizeof) {
-            __atomic_store_2(cast(shared(void)*)&val, *cast(ushort*)&newval, ms);
-        } else static if (T.sizeof == uint.sizeof) {
-            __atomic_store_4(cast(shared(void)*)&val, *cast(uint*)&newval, ms);
-        } else static if (T.sizeof == ulong.sizeof && GNU_Have_64Bit_Atomics) {
-            __atomic_store_8(cast(shared(void)*)&val, *cast(ulong*)&newval, ms);
-        } else static if (GNU_Have_LibAtomic) {
-            __atomic_store(T.sizeof, cast(shared(void)*)&val, cast(void*)&newval, ms);
-        } else
-            static assert(0, "Invalid template type specified.");
-    }
-
-    void atomicFence() nothrow @nogc {
-        __atomic_thread_fence(MemoryOrder.seq);
-    }
-}
-
 // This is an ABI adapter that works on all architectures.  It type puns
 // floats and doubles to ints and longs, atomically loads them, then puns
 // them back.  This is necessary so that they get returned in floating

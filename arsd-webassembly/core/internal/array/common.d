@@ -1,11 +1,11 @@
 module core.internal.array.common;
 import core.internal.assertion;
 import core.internal.objutils;
-import core.stdc.stdlib : abort;
+import core.stdc.stdlib : abort, malloc, realloc, free;
 import core.stdc.string : memcpy, memset;
 import core.internal.traits;
+import core.arsd.memory_allocation;
 
-import mem = core.internal.platform.memory;
 import rt.hooks;
 
 extern (C):
@@ -17,11 +17,11 @@ byte[] _d_arrayappendcTX(const TypeInfo ti, ref byte[] px, size_t n) @trusted no
 	ubyte* ptr;
 	bool hasReallocated = false;
 	if (px.ptr is null)
-		ptr = cast(ubyte*) mem.malloc(newSize);
+		ptr = cast(ubyte*) malloc(newSize);
 	else {
 		// FIXME: anti-stomping by checking length == used   
 		hasReallocated = true;
-		ptr = mem.realloc(cast(ubyte[]) px, newSize).ptr;
+		ptr = realloc(cast(ubyte[]) px, newSize).ptr;
 	}
 	auto ns = ptr[0 .. newSize];
 	auto op = px.ptr;
@@ -56,6 +56,47 @@ ref Tarr _d_arrayappendcTX(Tarr : T[], T)(return ref scope Tarr px, size_t n) @t
 	px = (cast(T*) pxx.ptr)[0 .. pxx.length];
 
 	return px;
+}
+
+Tarr _d_newarraymTX(Tarr : U[], T, U)(size_t[] dims, bool isShared=false) @trusted
+{
+    debug(PRINTF) printf("_d_newarraymTX(dims.length = %d)\n", dims.length);
+
+    if (dims.length == 0)
+        return null;
+
+    alias UnqT = Unqual!(T);
+
+    void[] __allocateInnerArray(size_t[] dims)
+    {
+        import core.internal.array.utils : __arrayStart, __setArrayAllocLength, __arrayAlloc;
+
+        auto dim = dims[0];
+
+        debug(PRINTF) printf("__allocateInnerArray(UnqT = %s, dim = %lu, ndims = %lu\n", UnqT.stringof.ptr, dim, dims.length);
+        if (dims.length == 1)
+        {
+            auto r = _d_newarrayT!UnqT(dim, isShared);
+            return *cast(void[]*)(&r);
+        }
+
+        auto allocSize = (void[]).sizeof * dim;
+        // the array-of-arrays holds pointers! Don't use UnqT here!
+        auto info = __arrayAlloc!(void[])(allocSize);
+        __setArrayAllocLength!(void[])(info, allocSize, isShared);
+        auto p = __arrayStart(info)[0 .. dim];
+
+        foreach (i; 0..dim)
+        {
+            (cast(void[]*)p.ptr)[i] = __allocateInnerArray(dims[1..$]);
+        }
+        return p;
+    }
+
+    auto result = __allocateInnerArray(dims);
+    debug(PRINTF) printf("result = %llx\n", result.ptr);
+
+    return (cast(U*) result.ptr)[0 .. dims[0]];
 }
 
 ref Tarr _d_arrayappendT(Tarr : T[], T)(return ref scope Tarr x, scope Tarr y) @trusted pure {
@@ -131,7 +172,7 @@ void _d_array_slice_copy(void* dst, size_t dstlen, void* src, size_t srclen, siz
 }
 
 void reserve(T)(ref T[] arr, size_t length) @trusted {
-	arr = (cast(T*)(mem.malloc(length * T.sizeof).ptr))[0 .. 0];
+	arr = (cast(T*)(malloc(length * T.sizeof).ptr))[0 .. 0];
 }
 
 T[] _d_newarrayU(T)(size_t length, bool isShared = false) pure @trusted {
@@ -155,7 +196,7 @@ extern(C) byte[] _d_arraycatT(const TypeInfo ti, byte[] x, byte[] y) {
     if (!len)
         return null;
 
-	byte* p = cast(byte*)mem.malloc(len);
+	byte* p = cast(byte*)malloc(len);
 	p[len] = 0;
 	memcpy(p, x.ptr, xlen);
 	memcpy(p + xlen, y.ptr, ylen);
@@ -177,7 +218,7 @@ extern (C) void[] _d_arraycatnTX(const TypeInfo ti, scope byte[][] arrs) {
         return null;
 
     auto allocsize = length * size;
-	void* a = cast(void*)mem.malloc(allocsize);
+	void* a = cast(void*)malloc(allocsize);
 
     size_t j = 0;
     foreach (b; arrs)
@@ -291,7 +332,7 @@ template _d_arraysetlengthTImpl(Tarr : T[], T) {
 		if (newlength <= arr.length) {
 			arr = arr[0 .. newlength];
 		} else {
-			auto ptr = cast(T*) mem.pureRealloc(cast(ubyte[]) arr, newlength * T.sizeof);
+			auto ptr = cast(T*) pureRealloc(cast(ubyte[]) arr, newlength * T.sizeof);
 			arr = ptr[0 .. newlength];
 			if (orig !is null) {
 				static if (is(Tarr == string))
@@ -336,7 +377,7 @@ do {
 
 	if (!(*p).ptr) {
 		// pointer was null, need to allocate
-		auto info = mem.malloc(newsize);
+		auto info = malloc(newsize);
 		memset(info.ptr, 0, newsize);
 		*p = info[0 .. newlength];
 		return *p;
@@ -347,7 +388,7 @@ do {
 	/* Attempt to extend past the end of the existing array.
      * If not possible, allocate new space for entire array and copy.
      */
-	auto ptr = mem.pureRealloc(cast(ubyte[])*p, newsize);
+	auto ptr = pureRealloc(cast(ubyte[])*p, newsize);
 	ptr[0 .. size] = cast(ubyte[]) p.ptr[0 .. size];
 
 	/* Do postblit processing, as we are making a copy and the
@@ -395,7 +436,7 @@ do {
 
 	if (!(*p).ptr) {
 		// pointer was null, need to allocate
-		auto info = mem.malloc(newsize);
+		auto info = malloc(newsize);
 		doInitialize(info.ptr, info.ptr + newsize, tinext.initializer);
 		*p = info[0 .. newlength];
 		return *p;
@@ -406,7 +447,7 @@ do {
 	/* Attempt to extend past the end of the existing array.
      * If not possible, allocate new space for entire array and copy.
      */
-	auto ptr = mem.pureRealloc(cast(ubyte[])*p, newsize);
+	auto ptr = pureRealloc(cast(ubyte[])*p, newsize);
 	ptr[0 .. size] = cast(ubyte[]) p.ptr[0 .. size];
 
 	/* Do postblit processing, as we are making a copy and the

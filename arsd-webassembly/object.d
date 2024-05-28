@@ -646,11 +646,26 @@ class TypeInfo_Class : TypeInfo
 	TypeInfo_Class base;
 	void* destructor;
 	void function(Object) classInvariant;
-	uint flags;
-	void* deallocator;
-	OffsetTypeInfo[] m_offTi;
-	void function(Object) defaultConstructor;
-	immutable(void)* rtInfo;
+    enum ClassFlags : ushort
+    {
+        isCOMclass = 0x1,
+        noPointers = 0x2,
+        hasOffTi = 0x4,
+        hasCtor = 0x8,
+        hasGetMembers = 0x10,
+        hasTypeInfo = 0x20,
+        isAbstract = 0x40,
+        isCPPclass = 0x80,
+        hasDtor = 0x100,
+        hasNameSig = 0x200,
+    }
+    ClassFlags m_flags;
+    ushort     depth;           /// inheritance distance from Object
+    void*      deallocator;
+    OffsetTypeInfo[] m_offTi;
+    void function(Object) defaultConstructor;   // default Constructor
+	immutable(void)* m_RTInfo;
+    uint[4] nameSig;
 
 	override @property size_t size() nothrow pure const
     { return Object.sizeof; }
@@ -1300,15 +1315,6 @@ private void[] _d_newarrayOpT(alias op)(const TypeInfo ti, size_t[] dimensions)
     return foo(ti, dimensions);
 }
 
-
-extern (C) void[] _d_newarraymTX(const TypeInfo ti, size_t[] dims)
-{
-    if (dims.length == 0)
-        return null;
-    else
-        return _d_newarrayOpT!(_d_newarrayT)(ti, dims);
-}
-
 /// ditto
 extern (C) void[] _d_newarraymiTX(const TypeInfo ti, size_t[] dims)
 {
@@ -1472,8 +1478,7 @@ do
 
 // }
 
-public import core.array.v2102;
-public import core.array.v2099;
+public import core.internal.array.common;
 
 
 
