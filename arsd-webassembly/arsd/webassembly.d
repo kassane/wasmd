@@ -17,7 +17,8 @@ struct AcquireArgument {
 {
 	extern(C) void retain(int);
 	extern(C) void release(int);
-	extern(C) int acquire(int returnType, string callingModuleName, string code, AcquireArgument[] arguments);
+	// skip atomics for now - FIXME: need add atomic acquire/release
+	extern(C) int acquire(int returnType, string callingModuleName, string code, AcquireArgument[] arguments){return 0;}
 	extern(C) void abort();
 	extern(C) int monotimeNow();
 }

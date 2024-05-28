@@ -79,10 +79,12 @@ extern (C)
 
     void _d_arraybounds(string file, size_t line) {
 
-        version (WebAssembly)
-            arsd.webassembly.eval(
+        version (WebAssembly) {
+            import arsd.webassembly;
+            eval(
                 q{ console.error("Range error: " + $0 + ":" + $1 )},
                 file, line);
+        }
         else version (CustomRuntimePrinter)
             customRuntimePrinter("Range Error: ", file, ":", line);
         abort();
@@ -90,10 +92,12 @@ extern (C)
 
     /// Called when an out of range slice of an array is created
     void _d_arraybounds_slice(string file, uint line, size_t lwr, size_t upr, size_t length) {
-        version (WebAssembly)
-            arsd.webassembly.eval(
+        version (WebAssembly) {
+            import arsd.webassembly;
+            eval(
                 q{ console.error("Range error: " + $0 + ":" + $1 + " [" + $2 + ".." + $3 + "] <> " + $4)},
                 file, line, lwr, upr, length);
+        }
         else version (CustomRuntimePrinter)
             customRuntimePrinter("Range Error: ", file, ":", line, " [", lwr, "..", upr, "] <> ", length);
         abort();
@@ -101,10 +105,12 @@ extern (C)
 
     /// Called when an out of range array index is accessed
     void _d_arraybounds_index(string file, uint line, size_t index, size_t length) {
-        version (WebAssembly)
-            arsd.webassembly.eval(
+        version (WebAssembly) {
+            import arsd.webassembly;
+            eval(
                 q{ console.error("Array index " + $0  + " out of bounds '[0.."+$1+"]' " + $2 + ":" + $3)},
                 index, length, file, line);
+        }
         else version (CustomRuntimePrinter)
             customRuntimePrinter("Array index: ", index, " out of bounds '[0..", length, "]'", file, ":", line);
         abort();

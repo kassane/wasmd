@@ -30,7 +30,7 @@
 +/
 import arsd.simpledisplay;
 
-import std.math;
+import core.math;
 import std.random;
 
 struct PolarCoord {

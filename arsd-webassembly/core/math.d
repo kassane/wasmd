@@ -30,6 +30,9 @@ public:
 nothrow:
 @safe:
 
+/// PI is a constant representing the ratio of the circumference of a circle to its diameter.
+enum PI = 3.14159265358979323846264338327950288419716939937510;
+
 /*****************************************
  * Returns x rounded to a long value using the FE_TONEAREST rounding mode.
  * If the integer value of x is
