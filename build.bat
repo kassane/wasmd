@@ -1,1 +1,0 @@
-cmd /c "ldc2 -O -i --d-version=CarelessAlocation -i=std -Iarsd-webassembly/ -L--no-entry -L-allow-undefined -of=server/omg.wasm -mtriple=wasm32-unknown-unknown-wasm"

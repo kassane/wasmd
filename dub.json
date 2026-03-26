@@ -1,0 +1,76 @@
+{
+    "name": "wasmd",
+    "description": "Minimal D Runtime (druntime) for WebAssembly targets (wasm32, wasi, emsdk)",
+    "authors": [
+        "Adam D. Ruppe",
+        "Marcelo S. N. Mancini"
+    ],
+    "license": "BSL-1.0",
+
+    "targetType": "executable",
+    "targetPath": "server",
+
+    "sourcePaths": [],
+    "importPaths": [
+        "druntime"
+    ],
+
+    "dflags-ldc": [
+        "-O",
+        "-i",
+        "-i=std",
+        "-defaultlib=",
+        "-conf=",
+        "--d-version=CarelessAlocation",
+        "--link-internally"
+    ],
+    "lflags-ldc": [
+        "--no-entry",
+        "-allow-undefined",
+        "--export-dynamic"
+    ],
+
+    "configurations": [
+        {
+            "name": "test_all",
+            "targetName": "test_all",
+            "importPaths": ["tests"],
+            "sourceFiles": ["tests/test_all.d", "druntime/object.d"]
+        },
+        {
+            "name": "hello",
+            "targetName": "hello",
+            "sourceFiles": ["examples/hello.d", "druntime/object.d"]
+        },
+        {
+            "name": "features",
+            "targetName": "features",
+            "sourceFiles": ["examples/features.d", "druntime/object.d"]
+        },
+        {
+            "name": "tetris",
+            "targetName": "tetris",
+            "sourceFiles": ["examples/tetris.d", "druntime/object.d"]
+        },
+        {
+            "name": "nuke",
+            "targetName": "nuke",
+            "sourceFiles": ["examples/nuke.d", "druntime/object.d"]
+        },
+        {
+            "name": "asteroids",
+            "targetName": "asteroids",
+            "sourceFiles": ["examples/asteroids.d", "druntime/object.d"]
+        },
+        {
+            "name": "numbers",
+            "targetName": "numbers",
+            "sourceFiles": ["examples/numbers.d", "druntime/object.d"]
+        },
+        {
+            "name": "minesweeper",
+            "targetName": "minesweeper",
+            "sourceFiles": ["examples/minesweeper.d", "druntime/object.d"]
+        }
+    ]
+}

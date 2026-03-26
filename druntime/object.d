@@ -258,6 +258,44 @@ extern(C) void* _d_interface_cast(void* p, TypeInfo_Class c)
     return _d_dynamic_cast(cast(Object)(p - pi.offset), c);
 }
 
+/****************************************
+ * Unified cast hook for DMD >= 2.112 / LDC >= 1.42.
+ * The compiler lowers `cast(To)from` to `_d_cast!(To,From)(from)`.
+ */
+void* _d_cast(To, From)(From o) @trusted
+{
+    static if (is(From == To))
+    {
+        return *cast(void**)&o;
+    }
+    else static if (is(From == class) && is(To == interface))
+    {
+        // class -> interface: use _d_dynamic_cast
+        return _d_dynamic_cast(o, typeid(To));
+    }
+    else static if (is(From == class) && is(To == class))
+    {
+        static if (is(To : From))
+        {
+            // downcast: To is derived from From
+            return _d_dynamic_cast(o, typeid(To));
+        }
+        else
+        {
+            return null;
+        }
+    }
+    else static if (is(From == interface))
+    {
+        // interface -> class/interface
+        return _d_interface_cast(cast(void*) o, typeid(To));
+    }
+    else
+    {
+        return null;
+    }
+}
+
 
 extern(C)
 int _d_isbaseof2(scope TypeInfo_Class oc, scope const TypeInfo_Class c, scope ref size_t offset) @safe
@@ -1326,7 +1364,7 @@ extern (C) void[] _d_newarraymiTX(const TypeInfo ti, size_t[] dims)
 
 
 template _d_arraysetlengthTImpl(Tarr : T[], T) {
-	size_t _d_arraysetlengthT(return scope ref Tarr arr, size_t newlength) @trusted pure {
+	size_t _d_arraysetlengthTInner(return scope ref Tarr arr, size_t newlength) @trusted pure nothrow {
 		auto orig = arr;
 
 		if(newlength <= arr.length) {
@@ -1350,7 +1388,12 @@ template _d_arraysetlengthTImpl(Tarr : T[], T) {
 	}
 }
 
-extern (C) void[] _d_arraysetlengthT(const TypeInfo ti, size_t newlength, void[]* p)
+// Template version used by DMD >= 2.112 for arr.length = N lowering
+size_t _d_arraysetlengthT(Tarr : T[], T)(return scope ref Tarr arr, size_t newlength) @trusted pure nothrow {
+	return _d_arraysetlengthTImpl!(Tarr)._d_arraysetlengthTInner(arr, newlength);
+}
+
+extern (C) void[] _d_arraysetlengthT_legacy(const TypeInfo ti, size_t newlength, void[]* p)
 in
 {
     assert(ti);
@@ -1509,7 +1552,7 @@ extern(C) void[] _d_arraycatnTX(const TypeInfo ti, scope byte[][] arrs) @trusted
 }
 
 version(inline_concat) static if(__VERSION__ >= 2105)
-Tret _d_arraycatnTX(Tret, Tarr...)(auto ref Tarr froms) @trusted
+Tret _d_arraycatnTX(Tret, Tarr...)(auto ref Tarr froms) @trusted nothrow
 {
     import core.internal.traits : hasElaborateCopyConstructor, Unqual;
     import core.lifetime : copyEmplace;
@@ -1530,7 +1573,7 @@ Tret _d_arraycatnTX(Tret, Tarr...)(auto ref Tarr froms) @trusted
     if (totalLen == 0)
         return res;
 
-    _d_arraysetlengthTImpl!(typeof(res))._d_arraysetlengthT(res, totalLen);
+    _d_arraysetlengthTImpl!(typeof(res))._d_arraysetlengthTInner(res, totalLen);
 
     /* Currently, if both a postblit and a cpctor are defined, the postblit is
      * used. If this changes, the condition below will have to be adapted.

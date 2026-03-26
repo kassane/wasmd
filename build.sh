@@ -1,179 +1,68 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
-# LDCPATH=$HOME/Downloads/ldc2-1.36.0-linux-x86_64/bin
+# wasmd build script - builds all configurations using ldc2/ldmd2
+# Usage:
+#   ./build.sh              # build all (tests + examples)
+#   ./build.sh tests        # build tests only
+#   ./build.sh examples     # build examples only
+#   ./build.sh <name>       # build a single target (e.g. hello, tetris)
+#   ./build.sh clean        # remove build artifacts
 
-ldmd2 -O \
-hello.d \
--i \
--defaultlib= \
--conf= \
---d-version=CarelessAlocation \
--vtls \
--vgc \
--verrors=context \
---link-internally \
--i=std \
--L--no-entry \
--Iarsd-webassembly \
--L-allow-undefined \
--of=server/omg.wasm \
--mtriple=wasm32-unknown-unknown-wasm
+LDC="${LDC:-ldmd2}"
 
-## Test
+DFLAGS="-O -i -defaultlib= -conf= --d-version=CarelessAlocation \
+--link-internally -i=std -Idruntime \
+-L--no-entry -L--export-dynamic -L-allow-undefined \
+-mtriple=wasm32-unknown-unknown-wasm"
 
-ldmd2 -O \
-test_runtime.d \
--i \
--defaultlib= \
--conf= \
---d-version=CarelessAlocation \
--vtls \
--vgc \
--verrors=context \
---link-internally \
--i=std \
--L--no-entry \
--Iarsd-webassembly \
--L-allow-undefined \
--of=server/test.wasm \
--mtriple=wasm32-unknown-unknown-wasm
+OUT="server"
+RUNTIME="druntime/object.d"
 
-## Examples
+TESTS="test_all"
+EXAMPLES="hello features tetris nuke asteroids numbers minesweeper"
 
-ldmd2 -O \
-examples/tetris.d \
--i \
--defaultlib= \
--conf= \
---d-version=CarelessAlocation \
--vtls \
--vgc \
--verrors=context \
---link-internally \
--i=std \
--L--no-entry \
--Iarsd-webassembly \
--L-allow-undefined \
--of=server/tetris.wasm \
--mtriple=wasm32-unknown-unknown-wasm
+build_target() {
+    local name="$1"
+    local src="$2"
+    local extra="${3:-}"
+    echo "--- Building: $name ---"
+    $LDC $DFLAGS $extra $RUNTIME "$src" -of="$OUT/$name.wasm"
+}
 
-ldmd2 -O \
-examples/nuke.d \
--i \
--defaultlib= \
--conf= \
---d-version=CarelessAlocation \
--vtls \
--vgc \
--verrors=context \
---link-internally \
--i=std \
--L--no-entry \
--Iarsd-webassembly \
--L-allow-undefined \
--of=server/nuke.wasm \
--mtriple=wasm32-unknown-unknown-wasm
+case "${1:-all}" in
+    tests)
+        build_target "$TESTS" "tests/test_all.d" "-Itests"
+        ;;
+    examples)
+        for name in $EXAMPLES; do
+            build_target "$name" "examples/$name.d"
+        done
+        ;;
+    all)
+        build_target "$TESTS" "tests/test_all.d" "-Itests"
+        for name in $EXAMPLES; do
+            build_target "$name" "examples/$name.d"
+        done
+        ;;
+    clean)
+        rm -f "$OUT"/*.wasm "$OUT"/*.o
+        echo "Cleaned."
+        exit 0
+        ;;
+    *)
+        # Build a single target by name
+        if [ -f "tests/${1}.d" ]; then
+            build_target "$1" "tests/${1}.d" "-Itests"
+        elif [ -f "examples/${1}.d" ]; then
+            build_target "$1" "examples/${1}.d"
+        else
+            echo "Unknown target: $1"
+            echo "Available: $TESTS $EXAMPLES"
+            exit 1
+        fi
+        ;;
+esac
 
-ldmd2 -O \
-examples/asteroids.d \
--i \
--defaultlib= \
--conf= \
---d-version=CarelessAlocation \
--vtls \
--vgc \
--verrors=context \
---link-internally \
--i=std \
--L--no-entry \
--Iarsd-webassembly \
--L-allow-undefined \
--of=server/asteroids.wasm \
--mtriple=wasm32-unknown-unknown-wasm
-
-ldmd2 -O \
-examples/numbers.d \
--i \
--defaultlib= \
--conf= \
---d-version=CarelessAlocation \
--vtls \
--vgc \
--verrors=context \
---link-internally \
--i=std \
--L--no-entry \
--Iarsd-webassembly \
--L-allow-undefined \
--of=server/numbers.wasm \
--mtriple=wasm32-unknown-unknown-wasm
-
-ldmd2 -O \
-features.d \
--i \
--defaultlib= \
--conf= \
---d-version=CarelessAlocation \
--vtls \
--vgc \
--verrors=context \
---link-internally \
--i=std \
--L--no-entry \
--Iarsd-webassembly \
--L-allow-undefined \
--of=server/features.wasm \
--mtriple=wasm32-unknown-unknown-wasm
-
-ldmd2 -O \
-hello.d \
--i \
--defaultlib= \
--conf= \
---d-version=CarelessAlocation \
--vtls \
--vgc \
--verrors=context \
---link-internally \
--i=std \
--L--no-entry \
--Iarsd-webassembly \
--L-allow-undefined \
--of=server/hello.wasm \
--mtriple=wasm32-unknown-unknown-wasm
-
-ldmd2 -O \
-examples/minesweeper.d \
--i \
--defaultlib= \
--conf= \
---d-version=CarelessAlocation \
--vtls \
--vgc \
--verrors=context \
---link-internally \
--i=std \
--L--no-entry \
--Iarsd-webassembly \
--L-allow-undefined \
--of=server/minesweeper.wasm \
--mtriple=wasm32-unknown-unknown-wasm
-
-# ldmd2 -O \
-# examples/ronaroids.d \
-# -i \
-# -defaultlib= \
-# -conf= \
-# --d-version=CarelessAlocation \
-# -vtls \
-# -vgc \
-# -verrors=context \
-# --link-internally \
-# -i=std \
-# -L--no-entry \
-# -Iarsd-webassembly \
-# -L-allow-undefined \
-# -of=server/ronaroids.wasm \
-# -mtriple=wasm32-unknown-unknown-wasm
-
-rm -fr server/*.o
+rm -f "$OUT"/*.o
+echo "=== Done ==="

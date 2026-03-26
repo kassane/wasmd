@@ -1,19 +1,28 @@
 name: CI Build
 
-on: [push]
+on: [push, pull_request]
 
 jobs:
   build:
     strategy:
       fail-fast: false
       matrix:
-        runs-on: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.runs-on }}
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dlang-community/setup-dlang@v1
+
+      - uses: dlang-community/setup-dlang@v2
         with:
           compiler: ldc-latest
 
-      - name: Run
+      - name: Build all (tests + examples)
         run: bash ./build.sh
+
+      - name: Verify wasm outputs
+        run: |
+          ls -la server/*.wasm
+          test -f server/test_all.wasm
+          test -f server/hello.wasm
+          test -f server/tetris.wasm
+          test -f server/minesweeper.wasm

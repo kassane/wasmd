@@ -256,7 +256,7 @@ Tret _d_arraycatnTX(Tret, Tarr...)(auto ref Tarr froms) @trusted {
 	if (totalLen == 0)
 		return res;
 
-	_d_arraysetlengthTImpl!(typeof(res))._d_arraysetlengthT(res, totalLen);
+	_d_arraysetlengthTImpl!(typeof(res))._d_arraysetlengthTInner(res, totalLen);
 
 	/* Currently, if both a postblit and a cpctor are defined, the postblit is
      * used. If this changes, the condition below will have to be adapted.
@@ -326,7 +326,7 @@ void[] _d_arrayappendcd(ref byte[] x, dchar c) {
 }
 
 template _d_arraysetlengthTImpl(Tarr : T[], T) {
-	size_t _d_arraysetlengthT(return scope ref Tarr arr, size_t newlength) @trusted pure {
+	size_t _d_arraysetlengthTInner(return scope ref Tarr arr, size_t newlength) @trusted pure nothrow {
 		auto orig = arr;
 
 		if (newlength <= arr.length) {
@@ -350,7 +350,7 @@ template _d_arraysetlengthTImpl(Tarr : T[], T) {
 	}
 }
 
-void[] _d_arraysetlengthT(const TypeInfo ti, size_t newlength, void[]* p)
+void[] _d_arraysetlengthT_legacy(const TypeInfo ti, size_t newlength, void[]* p)
 in {
 	assert(ti);
 	assert(!(*p).length || (*p).ptr);

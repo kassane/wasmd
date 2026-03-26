@@ -102,13 +102,13 @@ void handler(Cgi cgi)
     }
     //--revert=dtorfields
     string cmd;
-    cmd = "ldc2 --revert=dtorfields --fvisibility=hidden -i=. -i=core -i=std -Iarsd-webassembly/ -L-allow-undefined -of" ~ path ~ ".wasm -mtriple=wasm32-unknown-unknown-wasm " ~ path ~ ".d arsd-webassembly/object.d";
+    cmd = "ldc2 --revert=dtorfields --fvisibility=hidden -i=. -i=core -i=std -Idruntime/ -L-allow-undefined -of" ~ path ~ ".wasm -mtriple=wasm32-unknown-unknown-wasm " ~ path ~ ".d druntime/object.d";
 
     writefln("getcmd=%s", getcwd);
     const wasm_file = buildPath("..", path).setExtension("wasm");
-    cmd = "ldc2 -i=. --d-version=CarelessAlocation -i=std -Iarsd-webassembly/ -L-allow-undefined -of" ~ wasm_file ~ " -mtriple=wasm32-unknown-unknown-wasm arsd-webassembly/core/arsd/aa arsd-webassembly/core/arsd/objectutils arsd-webassembly/core/internal/utf arsd-webassembly/core/arsd/utf_decoding " ~ path ~ ".d arsd-webassembly/object.d";
+    cmd = "ldc2 -i=. --d-version=CarelessAlocation -i=std -Idruntime/ -L-allow-undefined -of" ~ wasm_file ~ " -mtriple=wasm32-unknown-unknown-wasm druntime/core/arsd/aa druntime/core/arsd/objectutils druntime/core/internal/utf druntime/core/arsd/utf_decoding " ~ path ~ ".d druntime/object.d";
 
-    cmd = "ldc2 --revert=dtorfields -i=. --d-version=CarelessAlocation -i=std -Iarsd-webassembly/ -L-allow-undefined -of"~path~".wasm -mtriple=wasm32-unknown-unknown-wasm arsd-webassembly/core/arsd/aa arsd-webassembly/core/arsd/objectutils arsd-webassembly/core/internal/utf arsd-webassembly/core/arsd/utf_decoding arsd-webassembly/core/arsd/memory_allocation arsd-webassembly/core/array/v2102 arsd-webassembly/core/array/v2099 arsd-webassembly/core/array/common "~path~" arsd-webassembly/object.d ";
+    cmd = "ldc2 --revert=dtorfields -i=. --d-version=CarelessAlocation -i=std -Idruntime/ -L-allow-undefined -of"~path~".wasm -mtriple=wasm32-unknown-unknown-wasm druntime/core/arsd/aa druntime/core/arsd/objectutils druntime/core/internal/utf druntime/core/arsd/utf_decoding druntime/core/arsd/memory_allocation druntime/core/array/v2102 druntime/core/array/v2099 druntime/core/array/common "~path~" druntime/object.d ";
     //    const wasm_file=buildPath(getcwd,"..",path).setExtension("wasm");
     writefln("wasm-file=%s %s", wasm_file, wasm_file.exists);
     writefln("cmd\n%s", cmd);
