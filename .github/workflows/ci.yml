@@ -1,6 +1,10 @@
 name: CI Build
 
-on: [push, pull_request]
+on:
+  push:
+    branches: ['*']
+  pull_request:
+    branches: [master]
 
 jobs:
   build:
@@ -9,20 +13,36 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dlang-community/setup-dlang@v2
+      - name: Install LDC 1.42.0
+        uses: dlang-community/setup-dlang@v2
         with:
-          compiler: ldc-latest
+          compiler: ldc-1.42.0
 
-      - name: Build all (tests + examples)
-        run: bash ./build.sh
-
-      - name: Verify wasm outputs
+      - name: Verify toolchain
         run: |
+          ldmd2 --version | head -1
+          ldc2 --version | head -1
+
+      - name: Build tests
+        run: bash ./build.sh tests
+
+      - name: Build examples
+        run: bash ./build.sh examples
+
+      - name: Verify wasm outputs exist and are non-trivial
+        run: |
+          echo "=== wasm output sizes ==="
           ls -la server/*.wasm
-          test -f server/test_all.wasm
-          test -f server/hello.wasm
-          test -f server/tetris.wasm
-          test -f server/minesweeper.wasm
+          for f in test_all hello features tetris nuke asteroids numbers minesweeper; do
+            test -f "server/$f.wasm" || { echo "MISSING: $f.wasm"; exit 1; }
+            size=$(stat --printf="%s" "server/$f.wasm" 2>/dev/null || stat -f "%z" "server/$f.wasm")
+            if [ "$size" -lt 1024 ]; then
+              echo "FAIL: $f.wasm is only $size bytes (expected > 1KB)"
+              exit 1
+            fi
+            echo "OK: $f.wasm ($size bytes)"
+          done
