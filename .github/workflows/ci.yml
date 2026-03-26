@@ -33,7 +33,7 @@ jobs:
         run: |
           echo "=== wasm output sizes ==="
           ls -la server/*.wasm
-          for f in test_all hello features tetris nuke asteroids numbers minesweeper; do
+          for f in test_all hello features tetris nuke asteroids numbers minesweeper life snake mandelbrot breakout; do
             test -f "server/$f.wasm" || { echo "MISSING: $f.wasm"; exit 1; }
             size=$(stat --printf="%s" "server/$f.wasm" 2>/dev/null || stat -f "%z" "server/$f.wasm")
             if [ "$size" -lt 1024 ]; then

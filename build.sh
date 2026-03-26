@@ -20,7 +20,7 @@ OUT="server"
 RUNTIME="druntime/object.d"
 
 TESTS="test_all"
-EXAMPLES="hello features tetris nuke asteroids numbers minesweeper"
+EXAMPLES="hello features tetris nuke asteroids numbers minesweeper life snake mandelbrot breakout"
 
 build_target() {
     local name="$1"
